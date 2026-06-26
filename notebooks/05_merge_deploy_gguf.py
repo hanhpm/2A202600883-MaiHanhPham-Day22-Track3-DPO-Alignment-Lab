@@ -5,16 +5,16 @@
 # ---
 
 # %% [markdown]
-# # NB5 — Merge + Deploy + GGUF  (OPTIONAL / BONUS)
+# # NB5 â€” Merge + Deploy + GGUF  (OPTIONAL / BONUS)
 #
 # > **Optional (bonus).** Core lab = NB1--NB4. GGUF export builds llama.cpp at
 # > runtime and is the most fragile step --- skip on free Colab T4 if short on time.
 #
 # **Stack:** Unsloth `merge_and_unload` + `save_pretrained_gguf(quantization='Q4_K_M')`
 # + llama-cpp-python smoke test.
-# Maps to deck §7.1 lab brief: "merge adapter, quantize GGUF, serve với vLLM".
+# Maps to deck Â§7.1 lab brief: "merge adapter, quantize GGUF, serve vá»›i vLLM".
 #
-# > **Mục tiêu:** export the SFT+DPO adapter as a deployable GGUF Q4_K_M file
+# > **Má»¥c tiÃªu:** export the SFT+DPO adapter as a deployable GGUF Q4_K_M file
 # > (~1.5 GB on 3B / ~4 GB on 7B), then smoke-test it through llama-cpp-python.
 # > Final cell shows the optional vLLM serving command (BigGPU only).
 
@@ -28,10 +28,10 @@ from pathlib import Path
 
 COMPUTE_TIER = os.environ.get("COMPUTE_TIER", "T4").upper()
 BASE_MODEL = (
-    "unsloth/Qwen2.5-3B-bnb-4bit" if COMPUTE_TIER == "T4"
+    "unsloth/Qwen2.5-1.5B-Instruct-bnb-4bit" if COMPUTE_TIER == "T4"
     else "unsloth/Qwen2.5-7B-bnb-4bit"
 )
-MAX_LEN = 512 if COMPUTE_TIER == "T4" else 1024
+MAX_LEN = 384 if COMPUTE_TIER == "T4" else 1024
 
 REPO_ROOT = Path.cwd().parent if Path.cwd().name == "notebooks" else Path.cwd()
 DPO_PATH = REPO_ROOT / "adapters" / "dpo"
@@ -40,7 +40,7 @@ GGUF_DIR = REPO_ROOT / "gguf"
 MERGED_PATH.mkdir(parents=True, exist_ok=True)
 GGUF_DIR.mkdir(parents=True, exist_ok=True)
 
-assert DPO_PATH.exists(), "NB3 must run first"
+assert (DPO_PATH / "adapter_config.json").exists(), f"NB3 must run first - {DPO_PATH / 'adapter_config.json'} missing"
 
 print(f"COMPUTE_TIER:    {COMPUTE_TIER}")
 print(f"DPO adapter:     {DPO_PATH}")
@@ -68,7 +68,7 @@ model, tokenizer = FastLanguageModel.from_pretrained(
 if tokenizer.pad_token is None:
     tokenizer.pad_token = tokenizer.eos_token
 
-# Stack SFT-mini → DPO adapters
+# Stack SFT-mini â†’ DPO adapters
 SFT_PATH = REPO_ROOT / "adapters" / "sft-mini"
 model = PeftModel.from_pretrained(model, str(SFT_PATH))
 print(f"Loaded SFT-mini adapter from {SFT_PATH}")
@@ -105,12 +105,12 @@ torch.cuda.empty_cache()
 # %% [markdown]
 # ## 3. Quantize to GGUF Q4_K_M
 #
-# Q4_K_M is the sweet spot: ~4× compression vs FP16, minimal quality loss.
-# Unsloth wraps llama.cpp's `quantize` binary — first run downloads + compiles
+# Q4_K_M is the sweet spot: ~4Ã— compression vs FP16, minimal quality loss.
+# Unsloth wraps llama.cpp's `quantize` binary â€” first run downloads + compiles
 # llama.cpp (~3 min) then quantizes (~30 s).
 
 # %%
-# Reload the merged model — Unsloth's GGUF saver expects a live model handle.
+# Reload the merged model â€” Unsloth's GGUF saver expects a live model handle.
 from unsloth import FastLanguageModel as FLM
 
 model, tokenizer = FLM.from_pretrained(
@@ -131,10 +131,10 @@ model.save_pretrained_gguf(
 print(f"Saved GGUF Q4_K_M to {GGUF_DIR}")
 
 # %% [markdown]
-# ### 3a. Optional — additional quantization tiers (for the +3 rigor add-on)
+# ### 3a. Optional â€” additional quantization tiers (for the +3 rigor add-on)
 
 # %%
-# Uncomment if you want Q5_K_M + Q8_0 too (~2× total disk space).
+# Uncomment if you want Q5_K_M + Q8_0 too (~2Ã— total disk space).
 # Each adds ~30s for an extra GGUF file.
 #
 # model.save_pretrained_gguf(str(GGUF_DIR), tokenizer, quantization_method="q5_k_m")
@@ -161,7 +161,7 @@ from llama_cpp import Llama
 
 # Find the Q4_K_M GGUF
 gguf_files = list(GGUF_DIR.glob("*Q4_K_M*.gguf")) + list(GGUF_DIR.glob("*q4_k_m*.gguf"))
-assert gguf_files, "No Q4_K_M GGUF found — step 3 may have failed"
+assert gguf_files, "No Q4_K_M GGUF found â€” step 3 may have failed"
 gguf_path = gguf_files[0]
 print(f"Loading: {gguf_path.name}")
 
@@ -178,7 +178,7 @@ print("Loaded.")
 # ### 4a. Smoke prompt + response (deliverable: `06-gguf-smoke.png`)
 
 # %%
-SMOKE_PROMPT = "Giải thích ngắn gọn (3 câu) cách thuật toán Bubble sort hoạt động."
+SMOKE_PROMPT = "Giáº£i thÃ­ch ngáº¯n gá»n (3 cÃ¢u) cÃ¡ch thuáº­t toÃ¡n Bubble sort hoáº¡t Ä‘á»™ng."
 
 response = llm.create_chat_completion(
     messages=[{"role": "user", "content": SMOKE_PROMPT}],
@@ -191,13 +191,13 @@ print(f"RESPONSE (Q4_K_M GGUF, llama-cpp-python):\n  {response['choices'][0]['me
 print(f"\nTokens used: {response['usage']}")
 
 # %% [markdown]
-# ## 5. Optional — vLLM serving (BigGPU only)
+# ## 5. Optional â€” vLLM serving (BigGPU only)
 #
 # vLLM provides production-grade OpenAI-compatible serving. **Requires CUDA GPU
-# with ≥ 16 GB VRAM** and `vllm` installed (see `requirements-biggpu.txt`).
+# with â‰¥ 16 GB VRAM** and `vllm` installed (see `requirements-biggpu.txt`).
 # On T4 tier this cell will OOM. Skip on T4.
 #
-# Run in a SEPARATE terminal (NOT in the notebook — vLLM blocks until killed):
+# Run in a SEPARATE terminal (NOT in the notebook â€” vLLM blocks until killed):
 #
 # ```bash
 # pip install vllm                         # once
@@ -216,7 +216,7 @@ print(f"\nTokens used: {response['usage']}")
 # ```
 #
 # **Why not in the notebook?** vLLM's process model doesn't play nicely with
-# Jupyter — it expects to own the GPU + a long-running HTTP server. Run it as
+# Jupyter â€” it expects to own the GPU + a long-running HTTP server. Run it as
 # a sidecar process. The deck mentions vLLM as the deploy target; for actual
 # production you'd containerize this command. For the lab, llama-cpp-python in
 # step 4 is the graded artifact.
@@ -244,22 +244,23 @@ print("Saved data/eval/deploy_meta.json")
 # %% [markdown]
 # ## 7. Submission checklist
 #
-# Bạn vừa hoàn thành core lab. Trước khi submit:
+# Báº¡n vá»«a hoÃ n thÃ nh core lab. TrÆ°á»›c khi submit:
 #
-# 1. **Run** `make verify` — gatekeeper sẽ list missing artifacts.
-# 2. **Take screenshots** vào `submission/screenshots/` (xem `submission/screenshots/README.md`).
-# 3. **Fill** `submission/REFLECTION.md` — đặc biệt là § 3 (reward curves analysis,
-#    cross-reference deck §3.4) và § 6 (single change that mattered most).
-# 4. **(Optional)** Pick a rigor add-on từ rubric.md (β-sweep, HF push, GGUF
+# 1. **Run** `make verify` â€” gatekeeper sáº½ list missing artifacts.
+# 2. **Take screenshots** vÃ o `submission/screenshots/` (xem `submission/screenshots/README.md`).
+# 3. **Fill** `submission/REFLECTION.md` â€” Ä‘áº·c biá»‡t lÃ  Â§ 3 (reward curves analysis,
+#    cross-reference deck Â§3.4) vÃ  Â§ 6 (single change that mattered most).
+# 4. **(Optional)** Pick a rigor add-on tá»« rubric.md (Î²-sweep, HF push, GGUF
 #    release, W&B link, cross-judge).
 # 5. **(Optional)** Pick a `BONUS-CHALLENGE.md` provocation cho creative bonus.
 #
-# Push public repo + paste URL vào VinUni LMS Day-22 box.
+# Push public repo + paste URL vÃ o VinUni LMS Day-22 box.
 #
-# Câu hỏi cuối để brainstorm trước khi đóng laptop:
+# CÃ¢u há»i cuá»‘i Ä‘á»ƒ brainstorm trÆ°á»›c khi Ä‘Ã³ng laptop:
 #
-# > **The deck says:** "DPO + 30 min A100 + 2k UltraFeedback → 3.2 → 4.1 helpfulness."
+# > **The deck says:** "DPO + 30 min A100 + 2k UltraFeedback â†’ 3.2 â†’ 4.1 helpfulness."
 # > **You measured:** _<your win-rate from NB4>_.
 # > **Why might they differ?** Dataset (English vs VN), base model (Qwen2.5-3B vs
 # > deck's unspecified base), judge bias, sample size (8 prompts vs deck's full eval).
-# > Đó chính là § 6 trong REFLECTION — what 1 change would close the gap.
+# > ÄÃ³ chÃ­nh lÃ  Â§ 6 trong REFLECTION â€” what 1 change would close the gap.
+

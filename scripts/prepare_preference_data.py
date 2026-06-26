@@ -38,7 +38,7 @@ def main():
     args = parser.parse_args()
 
     tier = os.environ.get("COMPUTE_TIER", "T4").upper()
-    pref_slice = args.slice or (2000 if tier == "T4" else 5000)
+    pref_slice = args.slice or (300 if tier == "T4" else 5000)
 
     out = Path(args.output)
     out.mkdir(parents=True, exist_ok=True)

@@ -5,22 +5,22 @@
 # ---
 
 # %% [markdown]
-# # NB6 — LLM Benchmark: SFT-only vs SFT+DPO  (OPTIONAL / BONUS)
+# # NB6 â€” LLM Benchmark: SFT-only vs SFT+DPO  (OPTIONAL / BONUS)
 #
 # > **Optional (bonus).** Core lab = NB1--NB4. This runs lm-eval (~30 min on T4)
 # > and is skip-friendly --- do it only if you want quantitative deltas.
 #
 # **Stack:** `lm-eval-harness` (IFEval, GSM8K, MMLU) + hand-rolled AlpacaEval-lite (judge-based).
-# Maps to deck §8.1–§8.5 (Đánh giá Alignment): static suites · judge-based suites · reward-model
-# evaluators · VN landscape.
+# Maps to deck Â§8.1â€“Â§8.5 (ÄÃ¡nh giÃ¡ Alignment): static suites Â· judge-based suites Â· reward-model
+# evaluators Â· VN landscape.
 #
-# > **Mục tiêu:** chạy 4 benchmarks trên *cùng 1 base model* dưới 2 condition (SFT-only và
-# > SFT+DPO), thấy bằng số có gì tăng có gì giảm. Plot bar chart so sánh. Đây là cách *bạn* tự đo
-# > tương đương Tulu 3 stats §9.2b — không chỉ trích dẫn paper người khác.
+# > **Má»¥c tiÃªu:** cháº¡y 4 benchmarks trÃªn *cÃ¹ng 1 base model* dÆ°á»›i 2 condition (SFT-only vÃ 
+# > SFT+DPO), tháº¥y báº±ng sá»‘ cÃ³ gÃ¬ tÄƒng cÃ³ gÃ¬ giáº£m. Plot bar chart so sÃ¡nh. ÄÃ¢y lÃ  cÃ¡ch *báº¡n* tá»± Ä‘o
+# > tÆ°Æ¡ng Ä‘Æ°Æ¡ng Tulu 3 stats Â§9.2b â€” khÃ´ng chá»‰ trÃ­ch dáº«n paper ngÆ°á»i khÃ¡c.
 # >
-# > **Quan trọng đọc trước khi run:** deck §8.1 (vì sao đánh giá alignment khó). Một số
-# > benchmark có thể *giảm* sau DPO — đó là alignment tax (chat-tuning trade-off với reasoning),
-# > không phải bug. Document trong REFLECTION § 7.
+# > **Quan trá»ng Ä‘á»c trÆ°á»›c khi run:** deck Â§8.1 (vÃ¬ sao Ä‘Ã¡nh giÃ¡ alignment khÃ³). Má»™t sá»‘
+# > benchmark cÃ³ thá»ƒ *giáº£m* sau DPO â€” Ä‘Ã³ lÃ  alignment tax (chat-tuning trade-off vá»›i reasoning),
+# > khÃ´ng pháº£i bug. Document trong REFLECTION Â§ 7.
 
 # %% [markdown]
 # ## 0. Setup
@@ -34,15 +34,15 @@ from pathlib import Path
 COMPUTE_TIER = os.environ.get("COMPUTE_TIER", "T4").upper()
 
 if COMPUTE_TIER == "T4":
-    LIMIT_IFEVAL = 540
-    LIMIT_GSM8K = 500
-    LIMIT_MMLU = 500
-    LIMIT_ALPACA = 100
+    LIMIT_IFEVAL = int(os.environ.get("LIMIT_IFEVAL", "10"))
+    LIMIT_GSM8K = int(os.environ.get("LIMIT_GSM8K", "10"))
+    LIMIT_MMLU = int(os.environ.get("LIMIT_MMLU", "10"))
+    LIMIT_ALPACA = int(os.environ.get("LIMIT_ALPACA", "20"))
     BATCH_SIZE = 1
 else:
-    LIMIT_IFEVAL = 540
+    LIMIT_IFEVAL = int(os.environ.get("LIMIT_IFEVAL", "10"))
     LIMIT_GSM8K = 1319
-    LIMIT_MMLU = 5000
+    LIMIT_MMLU = int(os.environ.get("LIMIT_MMLU", "10"))
     LIMIT_ALPACA = 250
     BATCH_SIZE = 4
 
@@ -68,18 +68,19 @@ import torch
 assert torch.cuda.is_available(), "Need GPU. See HARDWARE-GUIDE.md."
 
 # %% [markdown]
-# ## 1. Helper — run lm-eval on a model+adapter pair
+# ## 1. Helper â€” run lm-eval on a model+adapter pair
 
 # %%
 import subprocess
+import sys
 
 
 def run_lm_eval(adapter_path, tasks, limit, num_fewshot, label):
     """Run lm-eval-harness with PEFT adapter on top of base, return parsed metrics."""
-    base = "unsloth/Qwen2.5-3B-bnb-4bit" if COMPUTE_TIER == "T4" else "unsloth/Qwen2.5-7B-bnb-4bit"
+    base = "unsloth/Qwen2.5-1.5B-Instruct-bnb-4bit" if COMPUTE_TIER == "T4" else "unsloth/Qwen2.5-7B-bnb-4bit"
     out_dir = EVAL_OUT / f"lm-{label}-{tasks}"
     cmd = [
-        "lm_eval",
+        sys.executable, "-m", "lm_eval",
         "--model", "hf",
         "--model_args", f"pretrained={base},peft={adapter_path},load_in_4bit=True",
         "--tasks", tasks,
@@ -101,7 +102,7 @@ def run_lm_eval(adapter_path, tasks, limit, num_fewshot, label):
 
 
 # %% [markdown]
-# ## 2. IFEval — Instruction-Following (programmatic)
+# ## 2. IFEval â€” Instruction-Following (programmatic)
 #
 # **What it tests:** can the model follow precise format instructions like "respond in 3 bullets."
 # 540 prompts, scored programmatically. No judge needed. **Why DPO matters:** chat alignment
@@ -119,7 +120,7 @@ gc.collect()
 torch.cuda.empty_cache()
 
 # %% [markdown]
-# ## 3. GSM8K — Grade-School Math (alignment tax probe)
+# ## 3. GSM8K â€” Grade-School Math (alignment tax probe)
 #
 # **What it tests:** 1.3K word problems, exact-match on the `####` final answer.
 # **Why DPO matters:** chat-aligned models often *lose* a few points on GSM8K (alignment tax).
@@ -136,7 +137,7 @@ gc.collect()
 torch.cuda.empty_cache()
 
 # %% [markdown]
-# ## 4. MMLU — Broad knowledge (sampled)
+# ## 4. MMLU â€” Broad knowledge (sampled)
 #
 # **What it tests:** 14K MCQ across 57 subjects. T4 limit: 500. BigGPU: 5K.
 # **Why DPO matters:** if MMLU drops a lot, you've over-aligned (capacity loss).
@@ -153,10 +154,10 @@ gc.collect()
 torch.cuda.empty_cache()
 
 # %% [markdown]
-# ## 5. AlpacaEval-lite — Win-rate vs reference (judge-based)
+# ## 5. AlpacaEval-lite â€” Win-rate vs reference (judge-based)
 #
 # Mini AlpacaEval 2 LC. 100 prompts, generate from both adapters, judge with gpt-4o-mini or
-# claude-haiku. Pure preference-style — closest in spirit to what DPO trained on.
+# claude-haiku. Pure preference-style â€” closest in spirit to what DPO trained on.
 #
 # Falls back to "skipped" if no API key. Set `OPENAI_API_KEY` or `ANTHROPIC_API_KEY` to enable.
 
@@ -188,8 +189,8 @@ def generate_with_adapter(adapter_path, prompts, max_new_tokens=256):
     from unsloth import FastLanguageModel
     from peft import PeftModel
 
-    base = "unsloth/Qwen2.5-3B-bnb-4bit" if COMPUTE_TIER == "T4" else "unsloth/Qwen2.5-7B-bnb-4bit"
-    max_len = 512 if COMPUTE_TIER == "T4" else 1024
+    base = "unsloth/Qwen2.5-1.5B-Instruct-bnb-4bit" if COMPUTE_TIER == "T4" else "unsloth/Qwen2.5-7B-bnb-4bit"
+    max_len = 384 if COMPUTE_TIER == "T4" else 1024
 
     model, tokenizer = FastLanguageModel.from_pretrained(
         model_name=base, max_seq_length=max_len, dtype=None, load_in_4bit=True,
@@ -288,12 +289,12 @@ if alpaca_prompts and (os.environ.get("OPENAI_API_KEY") or os.environ.get("ANTHR
     n_tie = sum(1 for j in judgments if j.get("winner_model") == "tie")
     n_total = len(judgments)
     alpaca_winrate = (n_dpo + 0.5 * n_tie) / n_total if n_total else 0.0
-    print(f"\nDPO win-rate: {n_dpo}/{n_total} wins, {n_tie} ties → {alpaca_winrate:.3f}")
+    print(f"\nDPO win-rate: {n_dpo}/{n_total} wins, {n_tie} ties â†’ {alpaca_winrate:.3f}")
     (EVAL_OUT / "alpaca_lite_judgments.json").write_text(
         json.dumps(judgments, ensure_ascii=False, indent=2)
     )
 else:
-    print("⚠ No API key set, skipping AlpacaEval-lite. Set OPENAI_API_KEY or ANTHROPIC_API_KEY.")
+    print("âš  No API key set, skipping AlpacaEval-lite. Set OPENAI_API_KEY or ANTHROPIC_API_KEY.")
     alpaca_winrate = None
 
 # %% [markdown]
@@ -338,8 +339,8 @@ print("BENCHMARK RESULTS")
 print("=" * 60)
 for bench, scores in metrics.items():
     delta = (scores["dpo"] - scores["sft"]) if all(s == s for s in scores.values()) else float("nan")
-    arrow = "↑" if delta > 0 else "↓" if delta < 0 else "—"
-    print(f"  {bench:18s}  SFT: {scores['sft']:.3f}   DPO: {scores['dpo']:.3f}   Δ: {delta:+.3f} {arrow}")
+    arrow = "â†‘" if delta > 0 else "â†“" if delta < 0 else "â€”"
+    print(f"  {bench:18s}  SFT: {scores['sft']:.3f}   DPO: {scores['dpo']:.3f}   Î”: {delta:+.3f} {arrow}")
 
 # %%
 import matplotlib.pyplot as plt
@@ -368,7 +369,7 @@ for i, b in enumerate(bench_names):
     if s == s and d == d:
         delta = d - s
         color = "#2e548a" if delta > 0 else "#c83538" if delta < 0 else "#666"
-        ax.annotate(f"Δ={delta:+.3f}", xy=(x[i], max(s, d) + 0.04),
+        ax.annotate(f"Î”={delta:+.3f}", xy=(x[i], max(s, d) + 0.04),
                     ha="center", fontsize=9, color=color, fontweight="bold")
 
 ax.set_xticks(x)
@@ -376,7 +377,7 @@ ax.set_xticklabels(bench_names)
 ax.set_ylabel("Score (acc / win-rate)")
 ax.set_ylim(0, 1.05)
 ax.axhline(0.5, color="#888", linestyle=":", linewidth=0.7, alpha=0.5)
-ax.set_title(f"Benchmark comparison: SFT-only vs SFT+DPO  ·  {COMPUTE_TIER}")
+ax.set_title(f"Benchmark comparison: SFT-only vs SFT+DPO  Â·  {COMPUTE_TIER}")
 ax.legend(loc="upper right")
 ax.grid(True, axis="y", alpha=0.3)
 fig.tight_layout()
@@ -408,35 +409,36 @@ final = {
 print(f"\nSaved {EVAL_OUT / 'benchmark_results.json'}")
 
 # %% [markdown]
-# ## 8. Vibe-coding callout — interpret your numbers
+# ## 8. Vibe-coding callout â€” interpret your numbers
 #
-# Câu hỏi để brainstorm trước khi viết REFLECTION § 7:
+# CÃ¢u há»i Ä‘á»ƒ brainstorm trÆ°á»›c khi viáº¿t REFLECTION Â§ 7:
 #
-# 1. **Benchmark nào tăng nhiều nhất?** Nếu IFEval tăng nhiều, DPO đã làm đúng việc của nó
-#    (chat-tuning). Nếu AlpacaEval-lite tăng nhiều → preference signal transfer tốt.
+# 1. **Benchmark nÃ o tÄƒng nhiá»u nháº¥t?** Náº¿u IFEval tÄƒng nhiá»u, DPO Ä‘Ã£ lÃ m Ä‘Ãºng viá»‡c cá»§a nÃ³
+#    (chat-tuning). Náº¿u AlpacaEval-lite tÄƒng nhiá»u â†’ preference signal transfer tá»‘t.
 #
-# 2. **Benchmark nào *giảm*?** GSM8K hoặc MATH giảm = **alignment tax** kinh điển (deck §8.1).
-#    Đó không phải bug; đó là trade-off:
-#    - Capacity được dành cho format (theo lệnh) thay vì reasoning sâu
-#    - Chat data thường ngắn hơn math derivation → model học output ngắn hơn
+# 2. **Benchmark nÃ o *giáº£m*?** GSM8K hoáº·c MATH giáº£m = **alignment tax** kinh Ä‘iá»ƒn (deck Â§8.1).
+#    ÄÃ³ khÃ´ng pháº£i bug; Ä‘Ã³ lÃ  trade-off:
+#    - Capacity Ä‘Æ°á»£c dÃ nh cho format (theo lá»‡nh) thay vÃ¬ reasoning sÃ¢u
+#    - Chat data thÆ°á»ng ngáº¯n hÆ¡n math derivation â†’ model há»c output ngáº¯n hÆ¡n
 #
-# 3. **MMLU thay đổi ít hay nhiều?** MMLU đo *kiến thức nền*. DPO trên preference data thường
-#    KHÔNG dạy facts mới → MMLU thường flat (±2pp). Nếu giảm > 5pp → catastrophic forgetting,
-#    giảm β hoặc giảm epochs.
+# 3. **MMLU thay Ä‘á»•i Ã­t hay nhiá»u?** MMLU Ä‘o *kiáº¿n thá»©c ná»n*. DPO trÃªn preference data thÆ°á»ng
+#    KHÃ”NG dáº¡y facts má»›i â†’ MMLU thÆ°á»ng flat (Â±2pp). Náº¿u giáº£m > 5pp â†’ catastrophic forgetting,
+#    giáº£m Î² hoáº·c giáº£m epochs.
 #
-# 4. **AlpacaEval-lite có khớp với NB4 judge eval không?** Cả 2 đều judge-based nhưng prompt
-#    distribution khác nhau (NB4: 8 fixed, mix helpfulness+safety; AlpacaEval-lite: 100,
-#    helpfulness-focused). Kết quả khác = signal về *prompt distribution sensitivity*.
+# 4. **AlpacaEval-lite cÃ³ khá»›p vá»›i NB4 judge eval khÃ´ng?** Cáº£ 2 Ä‘á»u judge-based nhÆ°ng prompt
+#    distribution khÃ¡c nhau (NB4: 8 fixed, mix helpfulness+safety; AlpacaEval-lite: 100,
+#    helpfulness-focused). Káº¿t quáº£ khÃ¡c = signal vá» *prompt distribution sensitivity*.
 #
-# **Vibe-coding tip (xem `VIBE-CODING.md` Phần 2 § Common workflows):** bạn có thể tự động hoá
-# với Claude Code:
+# **Vibe-coding tip (xem `VIBE-CODING.md` Pháº§n 2 Â§ Common workflows):** báº¡n cÃ³ thá»ƒ tá»± Ä‘á»™ng hoÃ¡
+# vá»›i Claude Code:
 #
 # ```
 # claude --permission-mode plan -p "Read data/eval/benchmark_results.json
-# and submission/REFLECTION.md, propose a draft for § 7 (≥ 150 words) interpreting
-# the deltas. Reference deck §8.1 for alignment tax framing."
+# and submission/REFLECTION.md, propose a draft for Â§ 7 (â‰¥ 150 words) interpreting
+# the deltas. Reference deck Â§8.1 for alignment tax framing."
 # ```
 #
 # ---
 #
-# **Bạn vừa hoàn thành full Lab 22 pipeline.** Run `make verify` để check submission readiness.
+# **Báº¡n vá»«a hoÃ n thÃ nh full Lab 22 pipeline.** Run `make verify` Ä‘á»ƒ check submission readiness.
+

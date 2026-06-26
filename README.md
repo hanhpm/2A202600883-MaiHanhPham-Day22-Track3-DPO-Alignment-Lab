@@ -1,68 +1,68 @@
-# Day 22 — DPO/ORPO Alignment Lab (Track 3)
+﻿# Day 22 â€” DPO/ORPO Alignment Lab (Track 3)
 
-Lab cho **AICB-P2T3 · Ngày 22 · DPO/ORPO Alignment — From SFT to Preference Learning**.
-Build SFT-mini checkpoint → train DPO adapter → compare SFT-only vs SFT+DPO → merge + GGUF + serve.
+Lab cho **AICB-P2T3 Â· NgÃ y 22 Â· DPO/ORPO Alignment â€” From SFT to Preference Learning**.
+Build SFT-mini checkpoint â†’ train DPO adapter â†’ compare SFT-only vs SFT+DPO â†’ merge + GGUF + serve.
 
-> Lab 22 là **lab alignment đầu tiên trong khoá** — bạn đi từ SFT (Lab 21) sang preference learning, đo helpfulness/safety bằng judge, và export model deployable. Output có thể là 1 **DPO-aligned VN model open-source publishable đầu tiên end-to-end của khoá** (xem deck §5).
+> Lab 22 lÃ  **lab alignment Ä‘áº§u tiÃªn trong khoÃ¡** â€” báº¡n Ä‘i tá»« SFT (Lab 21) sang preference learning, Ä‘o helpfulness/safety báº±ng judge, vÃ  export model deployable. Output cÃ³ thá»ƒ lÃ  1 **DPO-aligned VN model open-source publishable Ä‘áº§u tiÃªn end-to-end cá»§a khoÃ¡** (xem deck Â§5).
 
 ---
 
-## Hai tier — chọn cái phù hợp
+## Hai tier â€” chá»n cÃ¡i phÃ¹ há»£p
 
-| Tier | Compute | Base model | SFT slice | DPO slice | Time | Khi nào dùng |
+| Tier | Compute | Base model | SFT slice | DPO slice | Time | Khi nÃ o dÃ¹ng |
 |---|---|---|---|---|---|---|
-| **T4 (default)** | Free Colab T4 16 GB / laptop GPU ≥ 12 GB | `Qwen2.5-3B-bnb-4bit` | 1k VN Alpaca | 2k UltraFeedback | ~30 min core (NB1-4) | Hầu hết học viên — không Anthropic/OpenAI key, free Colab, RTX 3060/3070/4060 laptop |
-| **BigGPU (full)** | Colab Pro A100/L4 / Kaggle T4×2 / cloud H100 | `Qwen2.5-7B-bnb-4bit` | 1k VN Alpaca | 5k UltraFeedback | ~25 min core (NB1-4) | Đã có cloud GPU, muốn faithful với deck demo (3.2 → 4.1 helpfulness, A100 timing) |
+| **T4/local low-VRAM (default)** | Free Colab T4 16 GB / laptop GPU >= 6 GB | `Qwen2.5-1.5B-Instruct-bnb-4bit` | 200 VN Alpaca fallback / configurable | 300 preference pairs fallback / configurable | local smoke first | RTX 4050/3060/4060 laptop or Colab T4 |
+| **BigGPU (full)** | Colab Pro A100/L4 / Kaggle T4Ã—2 / cloud H100 | `Qwen2.5-7B-bnb-4bit` | 1k VN Alpaca | 5k UltraFeedback | ~25 min core (NB1-4) | ÄÃ£ cÃ³ cloud GPU, muá»‘n faithful vá»›i deck demo (3.2 â†’ 4.1 helpfulness, A100 timing) |
 
-> Cả hai tier dùng **cùng notebook source** — đổi giữa T4 và BigGPU bằng cách sửa `COMPUTE_TIER` trong `.env` (hoặc đổi badge launch URL bên dưới).
+> Cáº£ hai tier dÃ¹ng **cÃ¹ng notebook source** â€” Ä‘á»•i giá»¯a T4 vÃ  BigGPU báº±ng cÃ¡ch sá»­a `COMPUTE_TIER` trong `.env` (hoáº·c Ä‘á»•i badge launch URL bÃªn dÆ°á»›i).
 
-> **VRAM math quan trọng:** DPO chấm mỗi câu dưới *cả* policy và reference. Với PEFT/LoRA, TRL **không** nạp model thứ 2 -- nó tắt adapter để lấy reference forward pass trên cùng base 4-bit. VRAM cao hơn SFT là do **2 forward pass + giữ cả chosen lẫn rejected** trong batch (~1.5-2x activation memory của SFT), *không* phải vì 2 bản weights. Đó là lý do T4 tier dùng 3B (không 7B) và BigGPU tier yêu cầu A100/L4.
+> **VRAM math quan trá»ng:** DPO cháº¥m má»—i cÃ¢u dÆ°á»›i *cáº£* policy vÃ  reference. Vá»›i PEFT/LoRA, TRL **khÃ´ng** náº¡p model thá»© 2 -- nÃ³ táº¯t adapter Ä‘á»ƒ láº¥y reference forward pass trÃªn cÃ¹ng base 4-bit. VRAM cao hÆ¡n SFT lÃ  do **2 forward pass + giá»¯ cáº£ chosen láº«n rejected** trong batch (~1.5-2x activation memory cá»§a SFT), *khÃ´ng* pháº£i vÃ¬ 2 báº£n weights. ÄÃ³ lÃ  lÃ½ do T4 tier dÃ¹ng 3B (khÃ´ng 7B) vÃ  BigGPU tier yÃªu cáº§u A100/L4.
 
 ---
 
-## Quick Start — T4 (recommended)
+## Quick Start â€” T4 (recommended)
 
 **Option 1: Free Colab (zero install)**
 
 [![Open T4 in Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/<your-username>/Day22-Track3-DPO-Alignment-Lab/blob/main/colab/Lab22_DPO_T4.ipynb)
 
-Click → Runtime → Change runtime type → **T4 GPU** → Run all.
+Click â†’ Runtime â†’ Change runtime type â†’ **T4 GPU** â†’ Run all.
 
-**Option 2: Local laptop (≥ 12 GB VRAM)**
+**Option 2: Local laptop (>= 6 GB VRAM, 1.5B tier)**
 
 ```bash
 git clone https://github.com/<your-username>/Day22-Track3-DPO-Alignment-Lab.git
 cd Day22-Track3-DPO-Alignment-Lab
-bash setup-laptop.sh    # ~5 min — venv + deps + cuda probe + smoke test
+bash setup-laptop.sh    # ~5 min â€” venv + deps + cuda probe + smoke test
 make smoke              # import + GPU check (no training)
-make pipeline           # CORE: sft → data → dpo → eval (NB1-4, ~30 min)
+make pipeline           # CORE: sft â†’ data â†’ dpo â†’ eval (NB1-4, ~30 min)
 make verify             # pre-submission gatekeeper
 ```
 
-Yêu cầu: **Python 3.10–3.12**, NVIDIA GPU ≥ 12 GB VRAM (3060/4060 trở lên), CUDA 11.8 hoặc 12.1+.
+Yeu cau: **Python 3.10-3.12**, NVIDIA GPU >= 6 GB VRAM for the 1.5B tier, CUDA-capable PyTorch.
 
-### Tất cả lệnh `make`
+### Táº¥t cáº£ lá»‡nh `make`
 
 ```
 make help            Show this help
 make setup           Auto-detect Colab vs laptop, install deps + smoke check
 make smoke           Import + GPU check (scripts/verify.py --smoke)
-make sft             NB1 — build SFT-mini checkpoint (~10 min T4 / ~5 min A100)
-make data            NB2 — preference data prep (~2 min)
-make dpo             NB3 — DPO training (~15 min T4 / ~12 min A100)
-make eval            NB4 — side-by-side comparison + optional API judge
-make pipeline        CORE: run NB1 → NB4 in order (~30 min T4)
-make deploy          NB5 (OPTIONAL) — merge + GGUF + llama.cpp smoke
-make bench           NB6 (OPTIONAL) — IFEval/GSM8K/MMLU + 4-bar plot (~30 min T4)
+make sft             NB1 â€” build SFT-mini checkpoint (~10 min T4 / ~5 min A100)
+make data            NB2 â€” preference data prep (~2 min)
+make dpo             NB3 â€” DPO training (~15 min T4 / ~12 min A100)
+make eval            NB4 â€” side-by-side comparison + optional API judge
+make pipeline        CORE: run NB1 â†’ NB4 in order (~30 min T4)
+make deploy          NB5 (OPTIONAL) â€” merge + GGUF + llama.cpp smoke
+make bench           NB6 (OPTIONAL) â€” IFEval/GSM8K/MMLU + 4-bar plot (~30 min T4)
 make pipeline-full   Core + optional NB5 + NB6
-make beta-sweep      Bonus rigor: re-run NB3 with β ∈ {0.05, 0.1, 0.5}
-make verify          scripts/verify.py — gatekeeper (core passes without NB5/NB6)
+make beta-sweep      Bonus rigor: re-run NB3 with Î² âˆˆ {0.05, 0.1, 0.5}
+make verify          scripts/verify.py â€” gatekeeper (core passes without NB5/NB6)
 make clean           rm adapters/ data/pref/ gguf/ __pycache__
 ```
 
 ---
 
-## Quick Start — BigGPU (full)
+## Quick Start â€” BigGPU (full)
 
 ```bash
 bash setup-laptop.sh                     # base install
@@ -71,57 +71,57 @@ echo 'COMPUTE_TIER=BIGGPU' > .env        # flip the tier flag
 make pipeline                             # ~30 min on A100
 ```
 
-Hoặc Colab Pro / Kaggle: open `colab/Lab22_DPO_BigGPU.ipynb` (badge link sẽ resolve sau khi push lên GitHub).
+Hoáº·c Colab Pro / Kaggle: open `colab/Lab22_DPO_BigGPU.ipynb` (badge link sáº½ resolve sau khi push lÃªn GitHub).
 
 ---
 
-## Cấu trúc & tiến trình
+## Cáº¥u trÃºc & tiáº¿n trÃ¬nh
 
-| Notebook | Skill | Slide deliverable | Pass when… |
+| Notebook | Skill | Slide deliverable | Pass whenâ€¦ |
 |---|---|---|---|
-| `01_sft_mini` | Re-build Lab 21 SFT checkpoint inline (Unsloth + LoRA r=16, 1k VN Alpaca, 1 epoch) | Bullet 1 — base SFT artifact | adapter saves; loss decreases monotonically |
-| `02_preference_data` | Load `argilla/ultrafeedback-binarized-preferences-cleaned`, format `prompt/chosen/rejected`, save Parquet | Bullet 2 — preference data ready | parquet written; chosen ≠ rejected; 3 examples printed |
-| `03_dpo_train` | TRL `DPOTrainer(beta=0.1, lr=5e-7)` on SFT model + frozen reference; plot reward curves | Bullet 3 — DPO training + reward curves | adapter saves; reward gap > 0; chosen reward ↑ (or ↓ explained per deck §3.4) |
-| `04_compare_and_eval` | 8 fixed prompts × {SFT, SFT+DPO} side-by-side; optional GPT-4o/Claude judge | Bullet 4 — helpfulness comparison | table renders; ≥ 8 examples; win/loss/tie counts reported |
-| `05_merge_deploy_gguf` **(OPTIONAL)** | `merge_and_unload()` → GGUF Q4_K_M → llama-cpp-python smoke test | Bullet 5 — deployable artifact | GGUF < 5 GB; smoke prompt returns coherent VN |
-| `06_benchmark` **(OPTIONAL)** | IFEval + GSM8K + MMLU (sampled) + AlpacaEval-lite on SFT-only vs SFT+DPO; 4-bar comparison plot | Bullet 6 — quantitative benchmark | `benchmark_results.json` written; 4 deltas annotated in plot; Reflection §7 explains alignment-tax pattern |
+| `01_sft_mini` | Re-build Lab 21 SFT checkpoint inline (Unsloth + LoRA r=16, 1k VN Alpaca, 1 epoch) | Bullet 1 â€” base SFT artifact | adapter saves; loss decreases monotonically |
+| `02_preference_data` | Load `argilla/ultrafeedback-binarized-preferences-cleaned`, format `prompt/chosen/rejected`, save Parquet | Bullet 2 â€” preference data ready | parquet written; chosen â‰  rejected; 3 examples printed |
+| `03_dpo_train` | TRL `DPOTrainer(beta=0.1, lr=5e-7)` on SFT model + frozen reference; plot reward curves | Bullet 3 â€” DPO training + reward curves | adapter saves; reward gap > 0; chosen reward â†‘ (or â†“ explained per deck Â§3.4) |
+| `04_compare_and_eval` | 8 fixed prompts Ã— {SFT, SFT+DPO} side-by-side; optional GPT-4o/Claude judge | Bullet 4 â€” helpfulness comparison | table renders; â‰¥ 8 examples; win/loss/tie counts reported |
+| `05_merge_deploy_gguf` **(OPTIONAL)** | `merge_and_unload()` â†’ GGUF Q4_K_M â†’ llama-cpp-python smoke test | Bullet 5 â€” deployable artifact | GGUF < 5 GB; smoke prompt returns coherent VN |
+| `06_benchmark` **(OPTIONAL)** | IFEval + GSM8K + MMLU (sampled) + AlpacaEval-lite on SFT-only vs SFT+DPO; 4-bar comparison plot | Bullet 6 â€” quantitative benchmark | `benchmark_results.json` written; 4 deltas annotated in plot; Reflection Â§7 explains alignment-tax pattern |
 
 **Source format:** Notebooks live as Jupytext `.py` files (small, easy to review). `setup-laptop.sh` and `make smoke` auto-convert to `.ipynb`. Edit `.ipynb` in Jupyter and Jupytext keeps both in sync.
 
-**Colab variant:** `colab/Lab22_DPO_T4.ipynb` and `colab/Lab22_DPO_BigGPU.ipynb` are stitched-together single-file `.ipynb` — same content as the 5 Jupytext sources but ready to launch via badge. Pick the laptop path or the Colab path; both produce identical artifacts.
+**Colab variant:** `colab/Lab22_DPO_T4.ipynb` and `colab/Lab22_DPO_BigGPU.ipynb` are stitched-together single-file `.ipynb` â€” same content as the 5 Jupytext sources but ready to launch via badge. Pick the laptop path or the Colab path; both produce identical artifacts.
 
 ---
 
-## Slide section → notebook map
+## Slide section â†’ notebook map
 
-Tra ngược từ slide bạn nhớ trong lecture về cell trong notebook:
+Tra ngÆ°á»£c tá»« slide báº¡n nhá»› trong lecture vá» cell trong notebook:
 
 | Deck section | Slide topic | Notebook |
 |---|---|---|
-| §1 (Tại sao SFT chưa đủ?) | Distribution shift, KL drift | `01_sft_mini.py` (mục đích) |
-| §3.1 (DPO loss derivation) | Bradley-Terry → log-ratio | `03_dpo_train.py` cell §3 |
-| §3.2 (β tuning) | Trade-off conservative vs aggressive | `03_dpo_train.py` cell §5 (bonus β-sweep) |
-| §3.4 (Failure modes) | Likelihood displacement, length hacking | `03_dpo_train.py` warning cell |
-| §5.2 (TRL implementation) | `DPOConfig` hyperparameters | `03_dpo_train.py` cell §2 |
-| §5.4 (VN landscape) | VinaLLaMA / PhoGPT / Vistral / SeaLLM | `02_preference_data.py` callout + `BONUS-CHALLENGE.md` provocation 1 |
-| §8.1–§8.5 (Đánh giá Alignment) | Static / Judge / Reward-Model / VN landscape | `06_benchmark.py` |
-| §9.1 (Demo) | UltraFeedback 2k, 30 min A100, 3.2 → 4.1 | `04_compare_and_eval.py` |
-| §9.2b (Tulu 3 stats) | +1.7 MATH / +3.3 GSM8K / +1.3 IFEval | reference numbers + `06_benchmark.py` measures *your* equivalents |
+| Â§1 (Táº¡i sao SFT chÆ°a Ä‘á»§?) | Distribution shift, KL drift | `01_sft_mini.py` (má»¥c Ä‘Ã­ch) |
+| Â§3.1 (DPO loss derivation) | Bradley-Terry â†’ log-ratio | `03_dpo_train.py` cell Â§3 |
+| Â§3.2 (Î² tuning) | Trade-off conservative vs aggressive | `03_dpo_train.py` cell Â§5 (bonus Î²-sweep) |
+| Â§3.4 (Failure modes) | Likelihood displacement, length hacking | `03_dpo_train.py` warning cell |
+| Â§5.2 (TRL implementation) | `DPOConfig` hyperparameters | `03_dpo_train.py` cell Â§2 |
+| Â§5.4 (VN landscape) | VinaLLaMA / PhoGPT / Vistral / SeaLLM | `02_preference_data.py` callout + `BONUS-CHALLENGE.md` provocation 1 |
+| Â§8.1â€“Â§8.5 (ÄÃ¡nh giÃ¡ Alignment) | Static / Judge / Reward-Model / VN landscape | `06_benchmark.py` |
+| Â§9.1 (Demo) | UltraFeedback 2k, 30 min A100, 3.2 â†’ 4.1 | `04_compare_and_eval.py` |
+| Â§9.2b (Tulu 3 stats) | +1.7 MATH / +3.3 GSM8K / +1.3 IFEval | reference numbers + `06_benchmark.py` measures *your* equivalents |
 
 ---
 
-## Deliverable (6 notebook đã chạy + ảnh chụp + reflection)
+## Deliverable (6 notebook Ä‘Ã£ cháº¡y + áº£nh chá»¥p + reflection)
 
-Mapping 1-to-1 với slide deliverable bullets:
+Mapping 1-to-1 vá»›i slide deliverable bullets:
 
-1. **NB1** — `adapters/sft-mini/` written; `01_sft_loss.png` shows monotonic decrease.
-2. **NB2** — `data/pref/train.parquet` with prompt/chosen/rejected columns; 3 inspected examples printed.
-3. **NB3** — `adapters/dpo/` written; reward gap plot saved as `03_dpo_reward_curves.png`.
-4. **NB4** — `04_side_by_side_table.png` + win/loss/tie summary (8 prompts × 2 models).
-5. **NB5 (OPTIONAL/bonus)** — `gguf/lab22-dpo-Q4_K_M.gguf` exists; `06_gguf_smoke.png` shows llama.cpp output.
-6. **NB6 (OPTIONAL/bonus)** — `data/eval/benchmark_results.json` + `07-benchmark-comparison.png` 4-bar chart with deltas annotated; REFLECTION §7 interprets alignment-tax pattern (deck §8.1).
+1. **NB1** â€” `adapters/sft-mini/` written; `01_sft_loss.png` shows monotonic decrease.
+2. **NB2** â€” `data/pref/train.parquet` with prompt/chosen/rejected columns; 3 inspected examples printed.
+3. **NB3** â€” `adapters/dpo/` written; reward gap plot saved as `03_dpo_reward_curves.png`.
+4. **NB4** â€” `04_side_by_side_table.png` + win/loss/tie summary (8 prompts Ã— 2 models).
+5. **NB5 (OPTIONAL/bonus)** â€” `gguf/lab22-dpo-Q4_K_M.gguf` exists; `06_gguf_smoke.png` shows llama.cpp output.
+6. **NB6 (OPTIONAL/bonus)** â€” `data/eval/benchmark_results.json` + `07-benchmark-comparison.png` 4-bar chart with deltas annotated; REFLECTION Â§7 interprets alignment-tax pattern (deck Â§8.1).
 
-Chấm điểm: xem [`rubric.md`](rubric.md). **Tổng 100 pts → Track-3 Daily Lab (30%)** + 20 pts bonus rigor add-ons (β-sweep, HF push, W&B, GGUF release).
+Cháº¥m Ä‘iá»ƒm: xem [`rubric.md`](rubric.md). **Tá»•ng 100 pts â†’ Track-3 Daily Lab (30%)** + 20 pts bonus rigor add-ons (Î²-sweep, HF push, W&B, GGUF release).
 
 ---
 
@@ -129,109 +129,109 @@ Chấm điểm: xem [`rubric.md`](rubric.md). **Tổng 100 pts → Track-3 Daily
 
 | Layer | Tool | Version | Why |
 |---|---|---|---|
-| **Training** | Unsloth | ≥ 2025.10 | Patched kernels, 7B-on-T4 viable, matches Day 21 reference |
-| **Trainers** | TRL | ≥ 0.12, < 0.20 | `DPOTrainer` + `DPOConfig` (deck §5.2 surface) |
-| **Adapters** | PEFT | ≥ 0.13 | LoRA r=16 α=32; reference model loaded as frozen 4-bit |
-| **Quantization** | bitsandbytes | ≥ 0.44 | NF4 base + bf16 LoRA |
-| **Data** | datasets + pyarrow | ≥ 3.1 | UltraFeedback + VN Alpaca slices |
-| **Local serving** | llama-cpp-python | ≥ 0.3 | GGUF Q4_K_M smoke test (CPU/Metal/CUDA) |
-| **Cloud serving** | vllm (BigGPU only) | ≥ 0.6.4 | OpenAI-compat for production-style serve test |
-| **Plotting** | matplotlib + pandas | ≥ 3.9 | Reward curves + side-by-side tables |
+| **Training** | Unsloth | â‰¥ 2025.10 | Patched kernels, 7B-on-T4 viable, matches Day 21 reference |
+| **Trainers** | TRL | â‰¥ 0.12, < 0.20 | `DPOTrainer` + `DPOConfig` (deck Â§5.2 surface) |
+| **Adapters** | PEFT | â‰¥ 0.13 | LoRA r=16 Î±=32; reference model loaded as frozen 4-bit |
+| **Quantization** | bitsandbytes | â‰¥ 0.44 | NF4 base + bf16 LoRA |
+| **Data** | datasets + pyarrow | â‰¥ 3.1 | UltraFeedback + VN Alpaca slices |
+| **Local serving** | llama-cpp-python | â‰¥ 0.3 | GGUF Q4_K_M smoke test (CPU/Metal/CUDA) |
+| **Cloud serving** | vllm (BigGPU only) | â‰¥ 0.6.4 | OpenAI-compat for production-style serve test |
+| **Plotting** | matplotlib + pandas | â‰¥ 3.9 | Reward curves + side-by-side tables |
 
-**Why not vLLM by default?** vLLM needs CUDA GPU + ≥ 16 GB VRAM and adds 3-5 min Docker/CUDA-toolkit install. For T4 tier we use llama-cpp-python which compiles inline in the wheel and works on CPU/Metal/CUDA. BigGPU tier gets vLLM as a final cell (informational on T4).
+**Why not vLLM by default?** vLLM needs CUDA GPU + â‰¥ 16 GB VRAM and adds 3-5 min Docker/CUDA-toolkit install. For T4 tier we use llama-cpp-python which compiles inline in the wheel and works on CPU/Metal/CUDA. BigGPU tier gets vLLM as a final cell (informational on T4).
 
 ---
 
 ## Vibe-coding tips
 
-Lab này thiết kế cho **vibe-coding era**: bạn dùng AI assistant trong terminal (Claude Code, Codex CLI, OpenCode) để generate boilerplate, focus vào *judgment decisions* — chọn dataset, chọn β, đọc reward curve, judge output. Đọc [`VIBE-CODING.md`](VIBE-CODING.md) **trước khi bắt đầu NB1** (5–10 phút) — file đó là general primer cover:
+Lab nÃ y thiáº¿t káº¿ cho **vibe-coding era**: báº¡n dÃ¹ng AI assistant trong terminal (Claude Code, Codex CLI, OpenCode) Ä‘á»ƒ generate boilerplate, focus vÃ o *judgment decisions* â€” chá»n dataset, chá»n Î², Ä‘á»c reward curve, judge output. Äá»c [`VIBE-CODING.md`](VIBE-CODING.md) **trÆ°á»›c khi báº¯t Ä‘áº§u NB1** (5â€“10 phÃºt) â€” file Ä‘Ã³ lÃ  general primer cover:
 
-- Spec-Driven Development (SDD) và TDD trong LLM era
-- Khi nào delegate cho AI, khi nào tự nghĩ
+- Spec-Driven Development (SDD) vÃ  TDD trong LLM era
+- Khi nÃ o delegate cho AI, khi nÃ o tá»± nghÄ©
 - 5 prompt patterns DPO-specific (diagnose chosen reward drop, generate VN prompts, critique config, translate UltraFeedback, judge outputs)
 - CLI tool recommendations (Claude Code / Codex CLI / OpenCode)
-- 3 anti-patterns phổ biến trong alignment work
+- 3 anti-patterns phá»• biáº¿n trong alignment work
 
-Mỗi notebook cũng có **vibe-coding callout** ở cuối: nói rõ subtask nào *nên* delegate cho AI, subtask nào *phải* bạn tự nghĩ (hint: reward curve interpretation và β chọn = think-hard zone).
-
----
-
-## Bonus Challenge — Build something real (optional, ungraded)
-
-Một sân chơi **không có điểm số** — không deadline, không rubric. Mục đích: cho bạn đem **domain knowledge cá nhân** vào 1 model align thật, ship như sản phẩm cho 1 audience cụ thể. Mỗi provocation hỏi bạn 4 câu: *Ai dùng?* — *Bạn đem domain gì vào?* — *Model làm gì cho họ?* — *Output ship như thế nào?*
-
-Đề xuất 5 provocations sẵn — bạn pick 1 hoặc invent your own:
-
-1. **Subject tutor** cho môn bạn đang học (toán, hoá, sử, lập trình...) — scaffolded pedagogy, không phải đáp án
-2. **Customer-service chatbot** cho 1 doanh nghiệp Việt cụ thể (cafe, shop, sửa xe...) — on-brand, có CTA
-3. **Job-shadow assistant** cho 1 nghề bạn quan sát (Grab driver, shipper, lễ tân...) — ngắn, action-oriented
-4. **Domain-safe assistant** cho 1 lĩnh vực nhạy cảm (sức khoẻ tinh thần, pháp lý, tài chính...) — có boundary rõ + hotline VN
-5. **Style mimic** — model viết kiểu 1 người/tổ chức bạn admire
-
-Full provocations: [`BONUS-CHALLENGE.md`](BONUS-CHALLENGE.md) (tiếng Việt) · [`BONUS-CHALLENGE-EN.md`](BONUS-CHALLENGE-EN.md) (English). Format: brainstorm-first, code-second, làm đôi/triple OK. Output: 1 portfolio piece có thể chỉ vào nói "tôi build cái này, audience X, dùng để Y."
-
-> Bonus **không** ảnh hưởng core grade. Phần thưởng thực sự là 1 portfolio piece phục vụ *ai đó cụ thể* + feedback bằng văn bản từ giảng viên về *application thinking* của bạn.
+Má»—i notebook cÅ©ng cÃ³ **vibe-coding callout** á»Ÿ cuá»‘i: nÃ³i rÃµ subtask nÃ o *nÃªn* delegate cho AI, subtask nÃ o *pháº£i* báº¡n tá»± nghÄ© (hint: reward curve interpretation vÃ  Î² chá»n = think-hard zone).
 
 ---
 
-## Cấu trúc repo
+## Bonus Challenge â€” Build something real (optional, ungraded)
+
+Má»™t sÃ¢n chÆ¡i **khÃ´ng cÃ³ Ä‘iá»ƒm sá»‘** â€” khÃ´ng deadline, khÃ´ng rubric. Má»¥c Ä‘Ã­ch: cho báº¡n Ä‘em **domain knowledge cÃ¡ nhÃ¢n** vÃ o 1 model align tháº­t, ship nhÆ° sáº£n pháº©m cho 1 audience cá»¥ thá»ƒ. Má»—i provocation há»i báº¡n 4 cÃ¢u: *Ai dÃ¹ng?* â€” *Báº¡n Ä‘em domain gÃ¬ vÃ o?* â€” *Model lÃ m gÃ¬ cho há»?* â€” *Output ship nhÆ° tháº¿ nÃ o?*
+
+Äá» xuáº¥t 5 provocations sáºµn â€” báº¡n pick 1 hoáº·c invent your own:
+
+1. **Subject tutor** cho mÃ´n báº¡n Ä‘ang há»c (toÃ¡n, hoÃ¡, sá»­, láº­p trÃ¬nh...) â€” scaffolded pedagogy, khÃ´ng pháº£i Ä‘Ã¡p Ã¡n
+2. **Customer-service chatbot** cho 1 doanh nghiá»‡p Viá»‡t cá»¥ thá»ƒ (cafe, shop, sá»­a xe...) â€” on-brand, cÃ³ CTA
+3. **Job-shadow assistant** cho 1 nghá» báº¡n quan sÃ¡t (Grab driver, shipper, lá»… tÃ¢n...) â€” ngáº¯n, action-oriented
+4. **Domain-safe assistant** cho 1 lÄ©nh vá»±c nháº¡y cáº£m (sá»©c khoáº» tinh tháº§n, phÃ¡p lÃ½, tÃ i chÃ­nh...) â€” cÃ³ boundary rÃµ + hotline VN
+5. **Style mimic** â€” model viáº¿t kiá»ƒu 1 ngÆ°á»i/tá»• chá»©c báº¡n admire
+
+Full provocations: [`BONUS-CHALLENGE.md`](BONUS-CHALLENGE.md) (tiáº¿ng Viá»‡t) Â· [`BONUS-CHALLENGE-EN.md`](BONUS-CHALLENGE-EN.md) (English). Format: brainstorm-first, code-second, lÃ m Ä‘Ã´i/triple OK. Output: 1 portfolio piece cÃ³ thá»ƒ chá»‰ vÃ o nÃ³i "tÃ´i build cÃ¡i nÃ y, audience X, dÃ¹ng Ä‘á»ƒ Y."
+
+> Bonus **khÃ´ng** áº£nh hÆ°á»Ÿng core grade. Pháº§n thÆ°á»Ÿng thá»±c sá»± lÃ  1 portfolio piece phá»¥c vá»¥ *ai Ä‘Ã³ cá»¥ thá»ƒ* + feedback báº±ng vÄƒn báº£n tá»« giáº£ng viÃªn vá» *application thinking* cá»§a báº¡n.
+
+---
+
+## Cáº¥u trÃºc repo
 
 ```
 .
-├── README.md                       # bạn đang đọc
-├── HARDWARE-GUIDE.md               # T4 vs BigGPU decision tree
-├── VIBE-CODING.md                  # vibe-coding workflow tips (5-10 phút đọc)
-├── BONUS-CHALLENGE.md              # creative sandbox brief (tiếng Việt)
-├── BONUS-CHALLENGE-EN.md           # creative sandbox brief (English)
-├── rubric.md                       # 100-pt grading + 20 pt bonus rigor add-ons
-├── Makefile                        # tier-aware orchestration
-├── setup-colab.sh                  # one-line Colab install
-├── setup-laptop.sh                 # local venv + cuda probe
-├── requirements.txt                # T4 baseline deps
-├── requirements-biggpu.txt         # BigGPU extras (vllm, flash-attn)
-├── pyproject.toml                  # for `uv` users
-├── .env.example                    # env template (COMPUTE_TIER, API keys)
-├── notebooks/                      # 6 Jupytext .py files (source of truth)
-│   ├── 01_sft_mini.py              # build SFT checkpoint inline
-│   ├── 02_preference_data.py       # load + format UltraFeedback
-│   ├── 03_dpo_train.py             # TRL DPOTrainer + reward curves
-│   ├── 04_compare_and_eval.py      # SFT-only vs SFT+DPO + judge
-│   ├── 05_merge_deploy_gguf.py     # merge + GGUF + llama.cpp smoke
-│   └── 06_benchmark.py             # IFEval/GSM8K/MMLU/AlpacaEval-lite + 4-bar plot
-├── colab/                          # Colab-launchable .ipynb mirrors
-│   ├── Lab22_DPO_T4.ipynb
-│   └── Lab22_DPO_BigGPU.ipynb
-├── scripts/
-│   ├── prepare_preference_data.py  # CLI wrapper for NB2 logic
-│   ├── train_dpo.py                # CLI wrapper for NB3 logic
-│   ├── eval_judge.py               # OpenAI/Anthropic judge — falls back to manual
-│   ├── merge_and_gguf.py           # CLI wrapper for NB5 logic
-│   └── verify.py                   # pre-submission gatekeeper
-├── data/                           # gitignored; populated by NB2 / scripts
-├── adapters/                       # gitignored; SFT + DPO outputs
-├── submission/
-│   ├── REFLECTION.md               # personal report template (6 sections)
-│   └── screenshots/                # add 6 required + 3 optional screenshots
-└── solutions/                      # released after submission deadline
-    └── README.md
+â”œâ”€â”€ README.md                       # báº¡n Ä‘ang Ä‘á»c
+â”œâ”€â”€ HARDWARE-GUIDE.md               # T4 vs BigGPU decision tree
+â”œâ”€â”€ VIBE-CODING.md                  # vibe-coding workflow tips (5-10 phÃºt Ä‘á»c)
+â”œâ”€â”€ BONUS-CHALLENGE.md              # creative sandbox brief (tiáº¿ng Viá»‡t)
+â”œâ”€â”€ BONUS-CHALLENGE-EN.md           # creative sandbox brief (English)
+â”œâ”€â”€ rubric.md                       # 100-pt grading + 20 pt bonus rigor add-ons
+â”œâ”€â”€ Makefile                        # tier-aware orchestration
+â”œâ”€â”€ setup-colab.sh                  # one-line Colab install
+â”œâ”€â”€ setup-laptop.sh                 # local venv + cuda probe
+â”œâ”€â”€ requirements.txt                # T4 baseline deps
+â”œâ”€â”€ requirements-biggpu.txt         # BigGPU extras (vllm, flash-attn)
+â”œâ”€â”€ pyproject.toml                  # for `uv` users
+â”œâ”€â”€ .env.example                    # env template (COMPUTE_TIER, API keys)
+â”œâ”€â”€ notebooks/                      # 6 Jupytext .py files (source of truth)
+â”‚   â”œâ”€â”€ 01_sft_mini.py              # build SFT checkpoint inline
+â”‚   â”œâ”€â”€ 02_preference_data.py       # load + format UltraFeedback
+â”‚   â”œâ”€â”€ 03_dpo_train.py             # TRL DPOTrainer + reward curves
+â”‚   â”œâ”€â”€ 04_compare_and_eval.py      # SFT-only vs SFT+DPO + judge
+â”‚   â”œâ”€â”€ 05_merge_deploy_gguf.py     # merge + GGUF + llama.cpp smoke
+â”‚   â””â”€â”€ 06_benchmark.py             # IFEval/GSM8K/MMLU/AlpacaEval-lite + 4-bar plot
+â”œâ”€â”€ colab/                          # Colab-launchable .ipynb mirrors
+â”‚   â”œâ”€â”€ Lab22_DPO_T4.ipynb
+â”‚   â””â”€â”€ Lab22_DPO_BigGPU.ipynb
+â”œâ”€â”€ scripts/
+â”‚   â”œâ”€â”€ prepare_preference_data.py  # CLI wrapper for NB2 logic
+â”‚   â”œâ”€â”€ train_dpo.py                # CLI wrapper for NB3 logic
+â”‚   â”œâ”€â”€ eval_judge.py               # OpenAI/Anthropic judge â€” falls back to manual
+â”‚   â”œâ”€â”€ merge_and_gguf.py           # CLI wrapper for NB5 logic
+â”‚   â””â”€â”€ verify.py                   # pre-submission gatekeeper
+â”œâ”€â”€ data/                           # gitignored; populated by NB2 / scripts
+â”œâ”€â”€ adapters/                       # gitignored; SFT + DPO outputs
+â”œâ”€â”€ submission/
+â”‚   â”œâ”€â”€ REFLECTION.md               # personal report template (6 sections)
+â”‚   â””â”€â”€ screenshots/                # add 6 required + 3 optional screenshots
+â””â”€â”€ solutions/                      # released after submission deadline
+    â””â”€â”€ README.md
 ```
 
 ---
 
 ## Common gotchas
 
-| Triệu chứng | Fix |
+| Triá»‡u chá»©ng | Fix |
 |---|---|
-| OOM ngay khi load model | Đang dùng tier sai. T4 → `Qwen2.5-3B`; nếu vẫn OOM, restart runtime + downgrade `unsloth` 1 minor |
-| `chosen_rewards` không tăng | Bình thường ở 100 step đầu. Sau 500 step nếu vẫn flat → giảm `beta` 0.1 → 0.05 hoặc tăng `lr` 5e-7 → 1e-6 |
-| `chosen_rewards` *giảm* mà reward gap *tăng* | Đó là **likelihood displacement** (deck §3.4). Bình thường ở DPO; ghi vào REFLECTION § "β trade-off" |
-| `RuntimeError: padding token is not set` | Add `tokenizer.pad_token = tokenizer.eos_token` trước khi tạo trainer |
-| Unsloth + TRL version mismatch | Pin: `unsloth>=2025.10 trl>=0.12,<0.20`. Nếu lỗi sau Unsloth update, downgrade Unsloth |
-| GGUF merge fails với "tied weights" | Xoá `model.config.tie_word_embeddings` trước `merge_and_unload()` |
-| Colab T4 OOM at DPO step 1 | Tăng `gradient_accumulation_steps` 8 → 16, giảm `per_device_train_batch_size` 1 → 1 (already min), giảm `max_length` 512 → 384 |
-| llama-cpp-python wheel install fails | `CMAKE_ARGS="-DGGML_CUDA=on" pip install llama-cpp-python` (CUDA), `-DGGML_METAL=on` (Mac) |
-| `lm_eval` import fails | `pip install "lm-eval[ifeval,math]>=0.4.5"` — extras pull `langdetect` and `sympy` |
-| NB6 IFEval crashes with "DataLoader" worker | lm-eval 0.4.x compat — set env `HF_DATASETS_TRUST_REMOTE_CODE=1` and rerun |
+| OOM ngay khi load model | Dung local low-VRAM path: `Qwen2.5-1.5B-Instruct-bnb-4bit`, `MAX_LEN=384`, restart runtime, then rerun. |
+| `chosen_rewards` khÃ´ng tÄƒng | BÃ¬nh thÆ°á»ng á»Ÿ 100 step Ä‘áº§u. Sau 500 step náº¿u váº«n flat â†’ giáº£m `beta` 0.1 â†’ 0.05 hoáº·c tÄƒng `lr` 5e-7 â†’ 1e-6 |
+| `chosen_rewards` *giáº£m* mÃ  reward gap *tÄƒng* | ÄÃ³ lÃ  **likelihood displacement** (deck Â§3.4). BÃ¬nh thÆ°á»ng á»Ÿ DPO; ghi vÃ o REFLECTION Â§ "Î² trade-off" |
+| `RuntimeError: padding token is not set` | Add `tokenizer.pad_token = tokenizer.eos_token` trÆ°á»›c khi táº¡o trainer |
+| Unsloth + TRL version mismatch | Pin: `unsloth>=2025.10 trl>=0.12,<0.20`. Náº¿u lá»—i sau Unsloth update, downgrade Unsloth |
+| GGUF merge fails vá»›i "tied weights" | XoÃ¡ `model.config.tie_word_embeddings` trÆ°á»›c `merge_and_unload()` |
+| Colab T4 OOM at DPO step 1 | TÄƒng `gradient_accumulation_steps` 8 â†’ 16, giáº£m `per_device_train_batch_size` 1 â†’ 1 (already min), giáº£m `max_length` 512 â†’ 384 |
+| llama-cpp-python wheel install fails on Windows | Enable Windows long paths, install it separately, or run NB5 in WSL/Colab. CUDA example: `CMAKE_ARGS="-DGGML_CUDA=on" pip install llama-cpp-python`. |
+| `lm_eval` import fails | `pip install "lm-eval[ifeval,math]>=0.4.5"` â€” extras pull `langdetect` and `sympy` |
+| NB6 IFEval crashes with "DataLoader" worker | lm-eval 0.4.x compat â€” set env `HF_DATASETS_TRUST_REMOTE_CODE=1` and rerun |
 | NB6 GSM8K accuracy = 0.000 | Few-shot prompts not loading. Verify `--num_fewshot 8` reaches the harness; downgrade lm-eval if 0.4.6 ships changes |
 | NB6 takes > 90 min on T4 | Lower `LIMIT_MMLU` (default 500) and `LIMIT_GSM8K` (default 500) further. Bench tier checks env first. |
 
@@ -239,31 +239,31 @@ Full provocations: [`BONUS-CHALLENGE.md`](BONUS-CHALLENGE.md) (tiếng Việt) �
 
 ## Submission
 
-**KHÔNG cần PR — chỉ submit GitHub URL công khai vào VinUni LMS.**
+**KHÃ”NG cáº§n PR â€” chá»‰ submit GitHub URL cÃ´ng khai vÃ o VinUni LMS.**
 
-1. **Fork hoặc copy repo này lên GitHub account của bạn**, set repo **public**.
+1. **Fork hoáº·c copy repo nÃ y lÃªn GitHub account cá»§a báº¡n**, set repo **public**.
    ```bash
    git init -b main
    git remote add origin https://github.com/<your-username>/Day22-Track3-DPO-Alignment-Lab.git
    ```
-2. Hoàn thành 5 notebooks (giữ output cells trong `.ipynb`).
-3. Add ảnh chụp vào `submission/screenshots/` (xem [`submission/screenshots/README.md`](submission/screenshots/README.md) để biết list 6+3).
-4. Điền [`submission/REFLECTION.md`](submission/REFLECTION.md) (6 sections, ≥150 từ §3 + §6).
-5. `make verify` — pre-submission gatekeeper. Nếu fail, fix và rerun.
-6. Push lên public repo:
+2. HoÃ n thÃ nh 5 notebooks (giá»¯ output cells trong `.ipynb`).
+3. Add áº£nh chá»¥p vÃ o `submission/screenshots/` (xem [`submission/screenshots/README.md`](submission/screenshots/README.md) Ä‘á»ƒ biáº¿t list 6+3).
+4. Äiá»n [`submission/REFLECTION.md`](submission/REFLECTION.md) (6 sections, â‰¥150 tá»« Â§3 + Â§6).
+5. `make verify` â€” pre-submission gatekeeper. Náº¿u fail, fix vÃ  rerun.
+6. Push lÃªn public repo:
    ```bash
    git add -A
-   git commit -m "Lab 22 submission — <Họ Tên>"
+   git commit -m "Lab 22 submission â€” <Há» TÃªn>"
    git push -u origin main
    ```
-7. **Paste public GitHub URL của bạn vào ô submission của Day 22 trong VinUni LMS.** Không cần PR. Không cần fork-back.
+7. **Paste public GitHub URL cá»§a báº¡n vÃ o Ã´ submission cá»§a Day 22 trong VinUni LMS.** KhÃ´ng cáº§n PR. KhÃ´ng cáº§n fork-back.
 
-> **Quan trọng:** Repo phải **public** đến khi điểm được công bố. Nếu private, grader không xem được → 0 điểm.
+> **Quan trá»ng:** Repo pháº£i **public** Ä‘áº¿n khi Ä‘iá»ƒm Ä‘Æ°á»£c cÃ´ng bá»‘. Náº¿u private, grader khÃ´ng xem Ä‘Æ°á»£c â†’ 0 Ä‘iá»ƒm.
 
-**Submission Options A / B / C** (cùng convention với Day 21):
-- **A — Lightweight ZIP** (default): GitHub repo + executed notebooks + screenshots + REFLECTION
-- **B — Professional** (+5 bonus): A + adapters pushed to HuggingFace Hub via `huggingface-cli upload`
-- **C — Code-only**: Repo + report, không weights (cho học viên hết storage Colab)
+**Submission Options A / B / C** (cÃ¹ng convention vá»›i Day 21):
+- **A â€” Lightweight ZIP** (default): GitHub repo + executed notebooks + screenshots + REFLECTION
+- **B â€” Professional** (+5 bonus): A + adapters pushed to HuggingFace Hub via `huggingface-cli upload`
+- **C â€” Code-only**: Repo + report, khÃ´ng weights (cho há»c viÃªn háº¿t storage Colab)
 
 ---
 
@@ -276,4 +276,6 @@ Full provocations: [`BONUS-CHALLENGE.md`](BONUS-CHALLENGE.md) (tiếng Việt) �
 
 ---
 
-© VinUniversity AICB program · A20 cohort 2026 · Track 3 Day 22.
+Â© VinUniversity AICB program Â· A20 cohort 2026 Â· Track 3 Day 22.
+
+
